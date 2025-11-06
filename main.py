@@ -61,15 +61,15 @@ def get_lpfid(object_id):
 # -----------------------
 # Main Pipeline
 # -----------------------
-def run(pose_model, video_path, out_dir, device="CPU"):
-    out_dir = Path(out_dir)
+def run(pose_model, face_model, video, output_dir, device="CPU"):
+    out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load models
     pose_estimator = HeadPoseEstimator(device)
     pose_estimator.load(pose_model)
 
-    face_detector = YOLO("model/yolov12n-face.pt")
+    face_detector = YOLO(face_model)
     
     # tracker = CentroidTracker()
     tracker = ByteTracker(args)
@@ -78,12 +78,12 @@ def run(pose_model, video_path, out_dir, device="CPU"):
     # cap = cv2.VideoCapture(video_path)
     # if not cap.isOpened():
     #     raise FileNotFoundError(f"Could not open video: {video_path}")
-    if video_path == "0":
+    if video == "0":
         cap = cv2.VideoCapture(0)  # Open webcam
     else:
-        cap = cv2.VideoCapture(video_path)
+        cap = cv2.VideoCapture(video)
         if not cap.isOpened():
-            raise FileNotFoundError(f"Could not open video: {video_path}")
+            raise FileNotFoundError(f"Could not open video: {video}")
     
 
     frame_idx = 0
@@ -98,6 +98,7 @@ def run(pose_model, video_path, out_dir, device="CPU"):
         frame_data = {"frame": frame_idx, "detections": []}
         results = face_detector(frame)
         rects_with_conf = []
+        save_counter = 0
 
         # Collect detections
         for r in results:
@@ -186,13 +187,17 @@ def run(pose_model, video_path, out_dir, device="CPU"):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
         # Save frame and JSON
-        cv2.imwrite(str(out_dir / f"frame_{frame_idx:06d}.jpg"), frame)
-        if frame_data["detections"]:
-            all_frames_data.append(frame_data)
+        if save_counter % constants.save_once_in_count == 0:
+            print(f"ready to save : {save_counter}")
+            cv2.imwrite(str(Path(output_dir) / f"frame_{frame_idx:06d}.jpg"), frame)
+            if frame_data["detections"]:
+                all_frames_data.append(frame_data)
 
         cv2.imshow("Head-pose demo", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+        save_counter = save_counter + constants.save_once_in_step
+        print(f"gsm counter : {save_counter}")
 
     cap.release()
     cv2.destroyAllWindows()
@@ -217,11 +222,20 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    for p in [ args.pose]:
-        if not Path(p).exists():
-            sys.exit(f"[ERROR] File not found: {p}")
-            
-        # if not Path(args.pose).exists():
-        # sys.exit(f"[ERROR] File not found: {args.pose}")
+    current_script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_base_dir = util.getdatapath(current_script_dir, '..', constants.data_base_dir)
+    pose_model = os.path.join(data_base_dir, constants.pose_model)
+    face_model = os.path.join(data_base_dir, constants.face_model)
+    video = '0' # os.path.join(data_base_dir, constants.video)
+    if not Path(pose_model).exists():
+        sys.exit(f"[ERROR] File not found: {pose_model}")
 
-    run(args.pose, args.video, args.out_dir, device=args.device)
+    if not Path(face_model).exists():
+        sys.exit(f"[ERROR] File not found: {face_model}")
+
+    # faces_dir = os.path.join(data_base_dir, constants.faces_dir)
+
+    output_dir = os.path.join(data_base_dir, constants.output_dir)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    all_detection_json = os.path.join(data_base_dir, constants.all_detection_json)        
+    run(pose_model, face_model, video, output_dir, device=args.device) 
